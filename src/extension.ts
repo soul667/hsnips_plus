@@ -8,7 +8,7 @@ import { parse } from './parser';
 import { getOldGlobalSnippetDir, getSnippetDirInfo, SnippetDirType } from './utils';
 import { getCompletions, CompletionInfo } from './completion';
 import { COMPLETIONS_TRIGGERS } from './consts';
-import { clearRequireCache } from './moduleResolver';
+import { clearRequireCache, setAdditionalModulePaths } from './moduleResolver';
 
 const SNIPPETS_BY_LANGUAGE: Map<string, HSnippet[]> = new Map();
 const SNIPPET_STACK: HSnippetInstance[] = [];
@@ -18,6 +18,10 @@ let insertingSnippet = false;
 async function loadSnippets(context: vscode.ExtensionContext) {
   SNIPPETS_BY_LANGUAGE.clear();
   clearRequireCache();
+
+  // Load additional module paths from configuration.
+  const modulePaths = vscode.workspace.getConfiguration('hsnips').get<string[]>('modulePaths') ?? [];
+  setAdditionalModulePaths(modulePaths);
 
   const snippetDirInfo = getSnippetDirInfo(context);
   if (snippetDirInfo === null) {
@@ -43,8 +47,8 @@ async function loadSnippets(context: vscode.ExtensionContext) {
 
   const globalSnippets = SNIPPETS_BY_LANGUAGE.get('all');
   if (globalSnippets) {
-    for (const entry of Array.from(SNIPPETS_BY_LANGUAGE.entries())) {
-      if (entry[0] != 'all') entry[1].push(...globalSnippets);
+    for (const [language, snippetList] of Array.from(SNIPPETS_BY_LANGUAGE.entries())) {
+      if (language != 'all') snippetList.push(...globalSnippets);
     }
   }
 
@@ -139,7 +143,12 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('hsnips.initSnippetDir', async () => {
-      const snippetDirPath = getSnippetDirInfo(context).path;
+      const snippetDirInfo = getSnippetDirInfo(context);
+      if (snippetDirInfo === null) {
+        vscode.window.showErrorMessage('Could not determine snippet directory.');
+        return;
+      }
+      const snippetDirPath = snippetDirInfo.path;
 
       if (!existsSync(snippetDirPath)) {
         mkdirSync(snippetDirPath, { recursive: true });
