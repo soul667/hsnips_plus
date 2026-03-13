@@ -1,4 +1,5 @@
 import { HSnippet, IHSnippetHeader, GeneratorFunction, ContextFilter } from './hsnippet';
+import { createSnippetRequire, getBuiltinModules } from './moduleResolver';
 
 const CODE_DELIMITER = '``';
 const CODE_DELIMITER_REGEX = /``(?!`)/;
@@ -89,15 +90,18 @@ function parseSnippet(headerLine: string, lines: string[]): IHSnippetInfo {
 
 // Transforms an hsnips file into a single function where the global context lives, every snippet is
 // transformed into a local function inside this and the list of all snippet functions is returned
-// so we can build the approppriate HSnippet objects.
-export function parse(content: string): HSnippet[] {
+// so we can build the appropriate HSnippet objects.
+//
+// When a filePath is provided, a scoped `require` is created using Module.createRequire so that
+// snippet files can require npm packages installed in their snippet directory.
+export function parse(content: string, filePath?: string): HSnippet[] {
   let lines = content.split(/\r?\n/);
 
-  let snippetInfos = [];
-  let script = [];
+  let snippetInfos: IHSnippetInfo[] = [];
+  let script: string[] = [];
   let isCode = false;
   let priority = 0;
-  let context = undefined;
+  let context: string | undefined = undefined;
 
   while (lines.length > 0) {
     let line = lines.shift() as string;
@@ -138,9 +142,22 @@ export function parse(content: string): HSnippet[] {
   }
   script.push(`]`);
 
-  // for some reason, `require` is not defined inside the snippet code blocks,
-  // so we're going to bind the it onto the function
-  let generators = new Function('require', script.join('\n'))(require) as IHSnippetParseResult[];
+  // Create a require function scoped to the snippet directory so that users can
+  // require npm packages installed there (e.g. lodash, mathjs, etc.).
+  const snippetRequire = filePath ? createSnippetRequire(filePath) : require;
+
+  // Expose commonly used built-in Node.js modules so snippets can use them
+  // directly without explicit require calls.
+  const builtins = getBuiltinModules();
+  const builtinNames = Object.keys(builtins);
+  const builtinValues = Object.values(builtins);
+
+  const paramNames = ['require'].concat(builtinNames);
+  const paramValues: unknown[] = [snippetRequire, ...builtinValues];
+
+  const fn = new Function(...paramNames, script.join('\n'));
+  let generators = fn(...paramValues) as IHSnippetParseResult[];
+
   return snippetInfos.map(
     (s, i) => new HSnippet(s.header, generators[i].generatorFunction, generators[i].contextFilter)
   );
