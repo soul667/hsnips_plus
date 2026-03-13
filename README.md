@@ -14,6 +14,7 @@ To use HyperSnips you create `.hsnips` files on a directory which depends on you
 - Linux: `$HOME/.config/Code/User/globalStorage/draivin.hsnips/hsnips/(language).hsnips`
 
 You can open this directory by running the command `HyperSnips: Open snippets directory`.
+You can also set it directly in the command palette with `HyperSnips: Set snippets directory`.
 This directory may be customized by changing the setting `hsnips.hsnipsPath`.
 If this setting starts with `~` or `${workspaceFolder}`, then it will be replaced with
 your home directory or the current workspace folder, respectively.

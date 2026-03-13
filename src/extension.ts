@@ -117,6 +117,52 @@ export function activate(context: vscode.ExtensionContext) {
   loadSnippets(context);
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('hsnips.setSnippetsDir', async () => {
+      const currentSnippetDir = getSnippetDirInfo(context).path;
+
+      const selectedDir = await vscode.window.showOpenDialog({
+        canSelectMany: false,
+        canSelectFiles: false,
+        canSelectFolders: true,
+        defaultUri: vscode.Uri.file(currentSnippetDir),
+        openLabel: 'Set HyperSnips Directory',
+      });
+
+      if (!selectedDir || selectedDir.length === 0) {
+        return;
+      }
+
+      const hasWorkspace = !!(vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0);
+      let target = vscode.ConfigurationTarget.Global;
+
+      if (hasWorkspace) {
+        const configTarget = await vscode.window.showQuickPick(
+          [
+            { label: 'Workspace', target: vscode.ConfigurationTarget.Workspace },
+            { label: 'User', target: vscode.ConfigurationTarget.Global },
+          ],
+          {
+            title: 'Save HyperSnips directory setting to',
+          }
+        );
+
+        if (!configTarget) {
+          return;
+        }
+
+        target = configTarget.target;
+      }
+
+      await vscode.workspace
+        .getConfiguration('hsnips')
+        .update('hsnipsPath', selectedDir[0].fsPath, target);
+
+      loadSnippets(context);
+      vscode.window.showInformationMessage(`HyperSnips directory set to: ${selectedDir[0].fsPath}`);
+    })
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand('hsnips.openSnippetsDir', () =>
       openExplorer(getSnippetDirInfo(context).path)
     )

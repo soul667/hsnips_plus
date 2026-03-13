@@ -61,6 +61,11 @@
         "commands": [
             {
                 "category": "HyperSnips",
+                "command": "hsnips.setSnippetsDir",
+                "title": "Set Snippets Directory"
+            },
+            {
+                "category": "HyperSnips",
                 "command": "hsnips.openSnippetsDir",
                 "title": "Open Snippets Directory"
             },
