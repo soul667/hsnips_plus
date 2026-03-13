@@ -8,6 +8,7 @@ import { parse } from './parser';
 import { getOldGlobalSnippetDir, getSnippetDirInfo, SnippetDirType } from './utils';
 import { getCompletions, CompletionInfo } from './completion';
 import { COMPLETIONS_TRIGGERS } from './consts';
+import { clearRequireCache, setAdditionalModulePaths } from './moduleResolver';
 
 const SNIPPETS_BY_LANGUAGE: Map<string, HSnippet[]> = new Map();
 const SNIPPET_STACK: HSnippetInstance[] = [];
@@ -16,6 +17,11 @@ let insertingSnippet = false;
 
 async function loadSnippets(context: vscode.ExtensionContext) {
   SNIPPETS_BY_LANGUAGE.clear();
+  clearRequireCache();
+
+  // Load additional module paths from configuration.
+  const modulePaths = vscode.workspace.getConfiguration('hsnips').get<string[]>('modulePaths') ?? [];
+  setAdditionalModulePaths(modulePaths);
 
   const snippetDirInfo = getSnippetDirInfo(context);
   if (snippetDirInfo === null) {
@@ -28,27 +34,27 @@ async function loadSnippets(context: vscode.ExtensionContext) {
     mkdirSync(snippetDirPath, { recursive: true });
   }
 
-  for (let file of readdirSync(snippetDirPath)) {
+  for (const file of readdirSync(snippetDirPath)) {
     if (path.extname(file).toLowerCase() != '.hsnips') continue;
 
-    let filePath = path.join(snippetDirPath, file);
-    let fileData = readFileSync(filePath, 'utf8');
+    const filePath = path.join(snippetDirPath, file);
+    const fileData = readFileSync(filePath, 'utf8');
 
-    let language = path.basename(file, '.hsnips').toLowerCase();
+    const language = path.basename(file, '.hsnips').toLowerCase();
 
-    SNIPPETS_BY_LANGUAGE.set(language, parse(fileData));
+    SNIPPETS_BY_LANGUAGE.set(language, parse(fileData, filePath));
   }
 
-  let globalSnippets = SNIPPETS_BY_LANGUAGE.get('all');
+  const globalSnippets = SNIPPETS_BY_LANGUAGE.get('all');
   if (globalSnippets) {
-    for (let [language, snippetList] of SNIPPETS_BY_LANGUAGE.entries()) {
+    for (const [language, snippetList] of Array.from(SNIPPETS_BY_LANGUAGE.entries())) {
       if (language != 'all') snippetList.push(...globalSnippets);
     }
   }
 
   // Sort snippets by descending priority.
-  for (let snippetList of SNIPPETS_BY_LANGUAGE.values()) {
-    snippetList.sort((a, b) => b.priority - a.priority);
+  for (const snippetList of Array.from(SNIPPETS_BY_LANGUAGE.values())) {
+    snippetList.sort((a: HSnippet, b: HSnippet) => b.priority - a.priority);
   }
 }
 
@@ -133,6 +139,39 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('hsnips.reloadSnippets', () => loadSnippets(context))
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('hsnips.initSnippetDir', async () => {
+      const snippetDirInfo = getSnippetDirInfo(context);
+      if (snippetDirInfo === null) {
+        vscode.window.showErrorMessage('Could not determine snippet directory.');
+        return;
+      }
+      const snippetDirPath = snippetDirInfo.path;
+
+      if (!existsSync(snippetDirPath)) {
+        mkdirSync(snippetDirPath, { recursive: true });
+      }
+
+      const packageJsonPath = path.join(snippetDirPath, 'package.json');
+      if (!existsSync(packageJsonPath)) {
+        const { writeFileSync } = await import('fs');
+        writeFileSync(packageJsonPath, JSON.stringify({
+          name: 'hsnips-modules',
+          version: '1.0.0',
+          private: true,
+          description: 'npm modules for HyperSnips snippets',
+        }, null, 2));
+      }
+
+      const terminal = vscode.window.createTerminal({
+        name: 'HyperSnips Modules',
+        cwd: snippetDirPath,
+      });
+      terminal.show();
+      terminal.sendText('echo "HyperSnips snippet directory initialized. Use npm install <package> to add modules."');
+    })
   );
 
   context.subscriptions.push(
